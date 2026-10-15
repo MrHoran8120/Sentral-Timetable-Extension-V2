@@ -104,5 +104,8 @@ const txt=(d,id)=>d.getElementById(id).textContent;
       return n.querySelector('.pnum').firstChild.textContent+(k?'['+k+']':'')+(l?' "'+l.textContent+'"':'');});
     console.log(' ',hm,rows.join('  '));
   }
+  console.log(String.fromCharCode(10)+'[12] auto reload every 5 minutes while on screen (sped up: 5 min = 3 s)');
+  s=mkServer(); a=boot({server:s}); await sleep(6500);
+  console.log(' full reloads in 10 sped-up minutes (1 on open + 2 automatic expected):',s.log.filter(x=>x==='full').length);
   process.exit(0);
 })();

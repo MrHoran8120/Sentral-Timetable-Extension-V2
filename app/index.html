@@ -123,6 +123,7 @@
   var LIVE_FROM = 8 * 60 + 30, LIVE_TO = 16 * 60; // 8:30 am to 4 pm: show the running period and countdowns
   var STALE_HOURS = 24, OLD_MINUTES = 120;
   var WEB_APP_RE = /^https:\/\/script\.google\.com\/macros\/(a\/[^\/\s]+\/)?s\/[^\/\s]+\/exec$/;
+  var AUTO_RELOAD_MS = 5 * 60000;
   var FAST_POLL_MS = 5000, SLOW_POLL_MS = 30000, WAIT_MS = 120000;
   var state = { data: null, view: 'day', dayDate: ymd(new Date()), demo: false, fetchError: '', scrape: { phase: 'idle' } };
   var poller = null;
@@ -406,6 +407,8 @@
     if (document.visibilityState === 'visible') { if (state.view === 'day') state.dayDate = ymd(new Date()); refresh(); }
   });
   setInterval(function () { if (document.visibilityState === 'visible') render(); }, 15000);
+  // Re-read the saved timetable every 5 minutes while the app is on screen.
+  setInterval(function () { if (document.visibilityState === 'visible' && !state.demo) refresh(); }, AUTO_RELOAD_MS);
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
 })();

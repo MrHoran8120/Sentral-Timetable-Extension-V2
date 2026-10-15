@@ -132,6 +132,7 @@ Still to test:
 - [ ] "Get latest": if the app cannot reach the Apps Script while waiting, it still gives up after 2 minutes, says it cannot reach the Apps Script, and recovers by itself when back online (fix added 2026-10-15; test by turning Wi-Fi off after clicking)
 - [ ] Live view (8:30 am to 4 pm, today only): running period green with "x min left"; when no period is running,
       the next one says "Starting in x min"; finished periods greyed (added 2026-10-15; check on the phone during a school day)
+- [ ] App reloads the saved timetable by itself every 5 minutes while on screen (added 2026-10-15)
 - [ ] 15-minute timer scrapes by itself during school hours (stamp advances) and survives the service worker going idle
 - [ ] Signed out of Sentral -> red "last scrape failed" banner in the app; signing in and scraping clears it
 - [ ] Viewing another fortnight (`&cycle=`) does not raise a false error (known issue, not fixed yet)
