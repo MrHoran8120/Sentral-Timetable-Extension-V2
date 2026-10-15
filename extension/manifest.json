@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Sentral-Timetable-Extension-V2",
+  "version": "2.0.0",
+  "description": "Reads today's lessons (periods 1-4) from your own Sentral timetable every 15 minutes and sends them to your own Apps Script.",
+  "permissions": ["storage", "alarms", "offscreen"],
+  "host_permissions": [
+    "https://*.sentral.com.au/*",
+    "https://script.google.com/*",
+    "https://script.googleusercontent.com/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://*.sentral.com.au/*timetables/timetable*"],
+      "js": ["parser.js", "content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "options_page": "options.html",
+  "action": { "default_title": "Sentral-Timetable-Extension-V2" },
+  "icons": { "48": "icon-48.png", "128": "icon-128.png" }
+}

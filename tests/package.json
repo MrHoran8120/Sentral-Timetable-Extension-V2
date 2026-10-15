@@ -1,0 +1,14 @@
+{
+  "name": "sentral-timetable-extension-v2-tests",
+  "private": true,
+  "description": "Offline tests (mock Chrome, Sentral and Apps Script). They print results to read; they do not assert.",
+  "scripts": {
+    "test": "node parser.test.js && node extension-background.test.js && node apps-script.test.js && node app.test.js && node bookmark.test.js",
+    "test:parser": "node parser.test.js",
+    "test:extension": "node extension-background.test.js",
+    "test:apps-script": "node apps-script.test.js",
+    "test:app": "node app.test.js",
+    "test:bookmark": "node bookmark.test.js"
+  },
+  "dependencies": { "jsdom": "^26.0.0" }
+}

@@ -1,0 +1,4 @@
+tests/node_modules/
+apps-script/.clasp.json
+# Your own saved Sentral page: has your name, school and class codes. Never publish it.
+tests/fixtures/sentral-timetable.html

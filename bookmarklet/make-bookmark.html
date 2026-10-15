@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sentral-Timetable-Extension-V2: bookmark version</title>
+<style>
+  body { font:15px/1.45 system-ui,sans-serif; max-width:680px; margin:24px auto; padding:0 16px; color:#1b2430; }
+  h1 { font-size:20px; } h2 { font-size:16px; margin-top:28px; }
+  label { display:block; margin:14px 0 4px; font-weight:600; }
+  input, textarea { width:100%; font:inherit; padding:8px; box-sizing:border-box; }
+  textarea { height:140px; font-family:ui-monospace,Consolas,monospace; font-size:13px; }
+  .hint { color:#6b7785; font-size:13px; }
+  button { font:inherit; padding:8px 14px; margin-top:14px; cursor:pointer; }
+  #result[hidden] { display:none; }
+  #bm { display:inline-block; padding:10px 16px; background:#1f4e79; color:#fff; border-radius:8px; text-decoration:none; font-weight:600; }
+  #code { height:90px; }
+</style>
+</head>
+<body>
+<h1>Sentral-Timetable-Extension-V2: bookmark version</h1>
+<p class="hint">For computers where Chrome will not let you install the extension. This page runs in your browser only; nothing you type here is sent anywhere. It makes a bookmark that reads today's periods 1 to 4 from your Sentral timetable page and sends them to your own Apps Script when you click it. It does not run by itself.</p>
+
+<label for="url">Apps Script web app URL</label>
+<input id="url" type="url" placeholder="https://script.google.com/macros/s/.../exec">
+
+<label for="token">Token</label>
+<input id="token" type="text" autocomplete="off">
+
+<label for="owner">Your name as shown at the top of your Sentral timetable</label>
+<input id="owner" type="text" value="G Horan">
+<div class="hint">Nothing is sent if the page shows someone else's timetable. Leave blank to turn this check off.</div>
+
+<label for="bell">Bell times (24-hour). Wednesday has its own set.</label>
+<textarea id="bell" spellcheck="false"></textarea>
+
+<button id="make">Make bookmark</button>
+<div id="err" style="color:#c62828;margin-top:8px"></div>
+
+<div id="result" hidden>
+  <h2>1. Add it to your bookmarks bar</h2>
+  <p>Drag this to your bookmarks bar (press Ctrl+Shift+B to show the bar):</p>
+  <p><a id="bm" href="#">Sync timetable</a></p>
+  <p class="hint">If dragging does not work: right-click the bookmarks bar, choose Add page, name it "Sync timetable", and paste the code below into the URL box.</p>
+  <textarea id="code" readonly spellcheck="false"></textarea>
+  <h2>2. Use it</h2>
+  <p>Open your Sentral timetable (the current cycle), then click the bookmark. A small box appears in the corner showing what was sent. Your phone app's "Last scraped" time should change.</p>
+  <p class="hint">The bookmark contains your token. If your bookmarks sync to your school Google account, the token goes with them. It only lets someone read or replace your own timetable data, but treat it as private.</p>
+</div>
+
+<script id="parser-src" type="text/plain">
+// Shared timetable reader. Finds the column for a given date (YYYY-MM-DD) on a Sentral
+// timetable page and returns that day's periods 1-4: class name, class code, room, change label.
+// It never reads student lists. Used by the extension, and copied into the bookmark.
+(function (root) {
+  'use strict';
+  var KEEP = ['1', '2', '3', '4'];
+
+  function clean(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
+  function stripParens(s) { return clean(s).replace(/^\((.*)\)$/, '$1'); }
+  function norm(s) { return clean(s).toLowerCase().replace(/[^a-z0-9]/g, ''); }
+  function pad(n) { return ('0' + n).slice(-2); }
+  function hasClass(n, c) { return !!(n && n.classList && n.classList.contains(c)); }
+
+  function parseCell(cell) {
+    var out = [], blocks = cell.querySelectorAll('.timetable-class');
+    for (var i = 0; i < blocks.length; i++) {
+      var b = blocks[i], strong = b.querySelector('strong');
+      var codeA = b.querySelector('a[href*="class="]'), roomA = b.querySelector('a[href*="room="]');
+      var labelEl = b.querySelector('.label');
+      var item = {
+        class: clean(strong && strong.textContent),
+        code: codeA ? stripParens(codeA.textContent) : '',
+        room: roomA ? clean(roomA.textContent) : '',
+        note: ''
+      };
+      if (!item.class) {
+        // On call, meetings and events: the title is plain text inside the block.
+        var c = b.cloneNode(true), junk = c.querySelectorAll('.period-icon, a[href*="teacher="], a[href*="room="], .label');
+        for (var j = 0; j < junk.length; j++) junk[j].parentNode.removeChild(junk[j]);
+        item.class = stripParens(c.textContent);
+      }
+      var label = clean(labelEl && labelEl.textContent);
+      if (label && label !== 'OnCall' && label !== 'Event' && norm(label) !== norm(item.class)) item.note = label;
+      if (item.class || item.room) out.push(item);
+    }
+    return out;
+  }
+
+  function parseDay(doc, ymd) {
+    var tables = doc.querySelectorAll('table.timetable');
+    for (var t = 0; t < tables.length; t++) {
+      var table = tables[t], dates = [];
+      var ths = table.querySelectorAll('th.timetable-date');
+      for (var i = 0; i < ths.length; i++) {
+        var m = clean(ths[i].textContent).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (m) dates.push(m[3] + '-' + pad(m[2]) + '-' + pad(m[1]));
+      }
+      var idx = dates.indexOf(ymd);
+      if (idx < 0) continue;
+      var ncols = dates.length, left = [];
+      for (var q = 0; q < ncols; q++) left.push(0);
+
+      var byPeriod = {}, holiday = false;
+      var rows = table.querySelectorAll('tr');
+      for (var r = 0; r < rows.length; r++) {
+        var tr = rows[r], ph = null, cells = [];
+        for (var k = 0; k < tr.children.length; k++) {
+          var ch = tr.children[k];
+          if (ch.tagName === 'TH' && hasClass(ch, 'timetable-period')) { if (!ph) ph = ch; }
+          else if (ch.tagName === 'TD' && (hasClass(ch, 'timetable-dayperiod') || hasClass(ch, 'timetable-holiday'))) cells.push(ch);
+        }
+        if (!ph && !cells.length) continue;
+
+        // Place cells into day columns, skipping columns still covered by an earlier rowspan.
+        var busy = left.map(function (v) { return v > 0; });
+        var next = left.map(function (v) { return v > 0 ? v - 1 : 0; });
+        var c2 = 0, mine = null;
+        for (var n = 0; n < cells.length; n++) {
+          while (c2 < ncols && busy[c2]) c2++;
+          if (c2 === idx) mine = cells[n];
+          var rs = parseInt(cells[n].getAttribute('rowspan') || '1', 10) || 1;
+          if (rs > 1 && c2 < ncols) next[c2] = rs - 1;
+          c2++;
+        }
+        left = next;
+
+        if (!mine) { if (busy[idx]) holiday = true; continue; }
+        if (hasClass(mine, 'timetable-holiday')) { holiday = true; continue; }
+        var label = ph ? clean(ph.textContent) : '';
+        if (KEEP.indexOf(label) < 0) continue;
+        byPeriod[label] = hasClass(mine, 'inactive') ? [] : parseCell(mine);
+      }
+
+      if (holiday) return { date: ymd, periods: [], holiday: true };
+      if (!Object.keys(byPeriod).length) return null; // table found but layout not understood
+
+      var periods = [];
+      KEEP.forEach(function (p) {
+        var items = byPeriod[p] || [];
+        if (!items.length) items = [{ class: 'Free', code: '', room: '', note: '' }];
+        items.forEach(function (it) { it.period = p; periods.push(it); });
+      });
+      return { date: ymd, periods: periods };
+    }
+    return null;
+  }
+
+  root.sentralParseDay = parseDay;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+</script>
+
+<script>
+var BM = function (C) {
+  function clean(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
+  function pad(n) { return ('0' + n).slice(-2); }
+
+  function toast(title, lines, bad) {
+    var d = document.createElement('div');
+    d.style.cssText = 'position:fixed;z-index:2147483647;top:12px;right:12px;max-width:360px;white-space:pre-wrap;' +
+      'background:' + (bad ? '#c62828' : '#1f4e79') + ';color:#fff;font:14px/1.4 system-ui,sans-serif;' +
+      'padding:12px 14px;border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,.35);cursor:pointer';
+    d.textContent = title + (lines && lines.length ? '\n' + lines.join('\n') : '');
+    d.onclick = function () { d.remove(); };
+    document.body.appendChild(d);
+    setTimeout(function () { d.remove(); }, bad ? 12000 : 8000);
+  }
+
+  function viaForm(url, json) {
+    var n = 'tt_' + Date.now(), f = document.createElement('iframe');
+    f.name = n; f.style.display = 'none'; document.body.appendChild(f);
+    var form = document.createElement('form');
+    form.method = 'POST'; form.action = url; form.target = n; form.style.display = 'none';
+    var i = document.createElement('input'); i.type = 'hidden'; i.name = 'payload'; i.value = json;
+    form.appendChild(i); document.body.appendChild(form); form.submit();
+    setTimeout(function () { form.remove(); f.remove(); }, 20000);
+  }
+
+  var owner = clean(C.owner).toLowerCase();
+  if (owner) {
+    var hs = document.querySelectorAll('h3'), ok = false;
+    for (var h = 0; h < hs.length; h++) if (clean(hs[h].textContent).toLowerCase() === owner) ok = true;
+    if (!ok) { toast('Not sent', ['This does not look like the timetable for "' + C.owner + '".'], true); return; }
+  }
+  if (!document.querySelector('table.timetable')) { toast('Not sent', ['No timetable found on this page.'], true); return; }
+
+  var now = new Date();
+  var ymd = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+  var parsed = sentralParseDay(document, ymd);
+  if (!parsed) {
+    if (now.getDay() === 0 || now.getDay() === 6) parsed = { date: ymd, periods: [] };
+    else { toast('Not sent', ['Today is not on this page. Open the current cycle of your timetable.'], true); return; }
+  }
+
+  var dow = new Date(+ymd.slice(0, 4), +ymd.slice(5, 7) - 1, +ymd.slice(8, 10)).getDay();
+  var set = (dow === 3 ? C.bell.wednesday : C.bell.normal) || {};
+  var day = { date: parsed.date, periods: parsed.periods.map(function (x) {
+    var t = set[x.period] || ['', ''];
+    return { period: x.period, start: t[0], end: t[1], class: x.class, code: x.code, room: x.room, note: x.note };
+  }) };
+  var json = JSON.stringify({ token: C.token, source: 'sentral-bookmark', scrapedAt: now.toISOString(), days: [day] });
+  var lines = day.periods.map(function (x) { return x.period + '  ' + x.class + (x.room ? '  (' + x.room + ')' : ''); });
+  if (parsed.holiday) lines = ['Holiday: no lessons'];
+  var title = 'Sent ' + parsed.date + ' (check "Last scraped" in your app)';
+
+  try {
+    fetch(C.url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: json })
+      .then(function () { toast(title, lines, false); })
+      .catch(function () { viaForm(C.url, json); toast(title + ' by backup route', lines, false); });
+  } catch (e) { viaForm(C.url, json); toast(title + ' by backup route', lines, false); }
+};
+
+var DEFAULT_BELL = {
+  normal:    { '1': ['08:45', '10:00'], '2': ['10:20', '11:35'], '3': ['11:40', '12:55'], '4': ['13:35', '14:50'] },
+  wednesday: { '1': ['08:45', '09:50'], '2': ['10:40', '11:45'], '3': ['11:50', '12:55'], '4': ['13:35', '14:40'] }
+};
+var $ = function (id) { return document.getElementById(id); };
+$('bell').value = JSON.stringify(DEFAULT_BELL, null, 2);
+
+$('make').onclick = function () {
+  $('err').textContent = '';
+  var bell;
+  try { bell = JSON.parse($('bell').value); } catch (e) { $('err').textContent = 'Bell times are not valid JSON: ' + e.message; return; }
+  var url = $('url').value.trim(), token = $('token').value.trim();
+  if (!/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(url)) { $('err').textContent = 'The URL should look like https://script.google.com/macros/s/.../exec'; return; }
+  if (!token) { $('err').textContent = 'Enter the token.'; return; }
+  var cfg = { url: url, token: token, owner: $('owner').value.trim(), bell: bell };
+  var parserSrc = $('parser-src').textContent;
+  var code = 'javascript:' + encodeURIComponent('(function(){' + parserSrc + '\n(' + BM.toString() + ')(' + JSON.stringify(cfg) + ');})();void 0');
+  $('bm').href = code;
+  $('code').value = code;
+  $('result').hidden = false;
+};
+</script>
+</body>
+</html>

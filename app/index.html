@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f4e79">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>My Timetable</title>
+<style>
+  :root {
+    --bg:#f4f6f9; --card:#fff; --text:#1b2430; --muted:#6b7785; --accent:#1f4e79;
+    --now:#e8f1fb; --nowborder:#2f7fd1; --warn:#b3261e; --warnbg:#fdecea; --line:#e3e8ee;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#10151c; --card:#1a222c; --text:#e8edf3; --muted:#93a1b1; --accent:#7db4ec;
+      --now:#1c2f45; --nowborder:#4a95e0; --warn:#ffb4ab; --warnbg:#3a1f1d; --line:#2a3542; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text);
+    font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom); }
+  .wrap { max-width:640px; margin:0 auto; padding:0 16px 32px; }
+  header { display:flex; align-items:flex-end; justify-content:space-between; padding:20px 0 8px; gap:12px; }
+  h1 { font-size:22px; margin:0; }
+  .sub { color:var(--muted); font-size:14px; }
+  .stamp { color:var(--muted); font-size:12px; margin-top:2px; }
+  .stamp.old { color:var(--warn); }
+  button { font:inherit; border:1px solid var(--line); background:var(--card); color:var(--text);
+    border-radius:8px; padding:8px 12px; cursor:pointer; }
+  button:disabled { opacity:.55; cursor:default; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+  @media (prefers-color-scheme: dark) { button.primary { color:#10151c; } }
+  .actions { display:flex; align-items:center; gap:10px; margin:8px 0 4px; flex-wrap:wrap; }
+  #scrapeStatus { font-size:12px; color:var(--muted); flex:1; min-width:160px; }
+  #scrapeStatus.bad { color:var(--warn); }
+  .tabs { display:flex; gap:8px; margin:8px 0 12px; }
+  .tabs button[aria-pressed="true"] { background:var(--accent); color:#fff; border-color:var(--accent); }
+  @media (prefers-color-scheme: dark) { .tabs button[aria-pressed="true"] { color:#10151c; } }
+  .banner { padding:10px 12px; border-radius:8px; margin:8px 0; font-size:14px; }
+  .banner.warn { background:var(--warnbg); color:var(--warn); }
+  .banner.info { background:var(--card); border:1px solid var(--line); color:var(--muted); }
+  .daynav { display:flex; align-items:center; justify-content:space-between; margin:4px 0 8px; }
+  .daynav strong { font-size:17px; }
+  .period { display:grid; grid-template-columns:56px 1fr auto; gap:12px; align-items:center;
+    background:var(--card); border:1px solid var(--line); border-left:4px solid var(--line);
+    border-radius:10px; padding:12px; margin:8px 0; }
+  .period.now { background:var(--now); border-color:var(--nowborder); border-left-color:var(--nowborder); }
+  .period.past { opacity:.55; }
+  .pnum { font-weight:700; color:var(--accent); font-size:18px; text-align:center; }
+  .pnum small { display:block; font-weight:400; color:var(--muted); font-size:11px; }
+  .cls { font-weight:600; }
+  .meta { color:var(--muted); font-size:14px; }
+  .room { font-weight:700; font-size:18px; text-align:right; }
+  .note { color:var(--warn); font-size:13px; margin-top:2px; }
+  .empty { text-align:center; color:var(--muted); padding:40px 0; }
+  .weekday { margin:16px 0 4px; font-weight:700; color:var(--accent); }
+  .weekday.today { text-decoration:underline; }
+  dialog { border:1px solid var(--line); border-radius:12px; background:var(--card); color:var(--text);
+    max-width:min(92vw,480px); width:100%; padding:20px; }
+  dialog::backdrop { background:rgba(0,0,0,.45); }
+  label { display:block; margin:12px 0 4px; font-size:14px; color:var(--muted); }
+  input { width:100%; font:inherit; padding:10px; border:1px solid var(--line); border-radius:8px;
+    background:var(--bg); color:var(--text); }
+  .row { display:flex; gap:8px; justify-content:flex-end; margin-top:16px; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1 id="title">My Timetable</h1>
+      <div class="sub" id="updated"></div>
+      <div class="stamp" id="stamp"></div>
+    </div>
+    <div>
+      <button id="refresh" title="Load the latest saved timetable">Reload</button>
+      <button id="settingsBtn" title="Settings">Settings</button>
+    </div>
+  </header>
+
+  <div id="banners"></div>
+
+  <div class="actions">
+    <button id="scrapeBtn" class="primary" title="Ask your school computer to read Sentral now">Get latest from Sentral</button>
+    <span id="scrapeStatus"></span>
+  </div>
+
+  <div class="tabs" role="group" aria-label="View">
+    <button id="tabDay" aria-pressed="true">Day</button>
+    <button id="tabWeek" aria-pressed="false">Week</button>
+  </div>
+
+  <div id="view"></div>
+</div>
+
+<dialog id="settings">
+  <h2 style="margin:0 0 4px">Settings</h2>
+  <div class="sub">Paste the Web app URL and token from your Apps Script setup. They are stored only on this device.</div>
+  <label for="url">Web app URL</label>
+  <input id="url" type="url" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
+  <label for="token">Token</label>
+  <input id="token" type="password" autocomplete="off">
+  <div class="note" id="setErr"></div>
+  <div class="row">
+    <button id="demoBtn">Show demo data</button>
+    <button id="cancelBtn">Cancel</button>
+    <button id="saveBtn" class="primary">Save</button>
+  </div>
+</dialog>
+
+<script>
+(function () {
+  'use strict';
+  var LS = {
+    get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+    del: function (k) { try { localStorage.removeItem(k); } catch (e) {} }
+  };
+  var STALE_HOURS = 24, OLD_MINUTES = 120;
+  var WEB_APP_RE = /^https:\/\/script\.google\.com\/macros\/(a\/[^\/\s]+\/)?s\/[^\/\s]+\/exec$/;
+  var FAST_POLL_MS = 5000, SLOW_POLL_MS = 30000, WAIT_MS = 120000;
+  var state = { data: null, view: 'day', dayDate: ymd(new Date()), demo: false, fetchError: '', scrape: { phase: 'idle' } };
+  var poller = null;
+
+  // ---------- helpers ----------
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function ymd(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function parseYmd(s) { var p = s.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  function mins(hhmm) { var p = String(hhmm || '').split(':'); return (+p[0]) * 60 + (+p[1] || 0); }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function fmtDay(s) { return parseYmd(s).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'short' }); }
+  function fmtStamp(iso) {
+    return new Date(iso).toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+  function ago(iso) {
+    var ms = Date.now() - new Date(iso).getTime(), m = Math.round(ms / 60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return m + ' min ago';
+    var h = Math.round(m / 60);
+    if (h < 48) return h + ' h ago';
+    return Math.round(h / 24) + ' days ago';
+  }
+  function configured() { return !!(LS.get('tt.url') && LS.get('tt.token')); }
+  function getDay(date) {
+    if (!state.data || !state.data.days) return null;
+    for (var i = 0; i < state.data.days.length; i++) if (state.data.days[i].date === date) return state.data.days[i];
+    return null;
+  }
+  function sortedDays() {
+    return (state.data && state.data.days ? state.data.days.slice() : []).sort(function (a, b) { return a.date < b.date ? -1 : 1; });
+  }
+  function api(query) {
+    var url = LS.get('tt.url'), token = LS.get('tt.token');
+    return fetch(url + (url.indexOf('?') < 0 ? '?' : '&') + 'token=' + encodeURIComponent(token) + (query ? '&' + query : ''),
+      { cache: 'no-store', redirect: 'follow' }).then(function (r) { return r.json(); });
+  }
+
+  // ---------- demo data ----------
+  function demoData() {
+    var days = [], d = new Date(), n = 0;
+    while (days.length < 5) {
+      if (d.getDay() !== 0 && d.getDay() !== 6) {
+        n++;
+        days.push({ date: ymd(d), periods: [
+          { period: '1', start: '08:45', end: '10:00', class: 'Enterprise Computing Yr12', code: '12ECC', room: '212' },
+          { period: '2', start: '10:20', end: '11:35', class: 'Computing Technology Yr9', code: '9CT1', room: '212', note: n === 2 ? 'Room change' : '' },
+          { period: '3', start: '11:40', end: '12:55', class: 'Free', code: '', room: '' },
+          { period: '4', start: '13:35', end: '14:50', class: 'Technology Yr7', code: '7TECH3', room: '314' }
+        ]});
+      }
+      d.setDate(d.getDate() + 1);
+    }
+    var now = new Date(Date.now() - 4 * 60000).toISOString();
+    return { ok: true, updated: now, scrapedAt: now, days: days };
+  }
+
+  // ---------- data ----------
+  function loadCache() {
+    var s = LS.get('tt.cache');
+    if (s) { try { state.data = JSON.parse(s); } catch (e) {} }
+  }
+  function refresh() {
+    if (state.demo) { state.data = demoData(); state.fetchError = ''; render(); return Promise.resolve(); }
+    if (!configured()) { render(); return Promise.resolve(); }
+    var btn = document.getElementById('refresh'); btn.disabled = true; btn.textContent = '...';
+    return api('')
+      .then(function (j) {
+        if (!j.ok) throw new Error(j.error || 'Server refused the request');
+        state.data = j; state.fetchError = '';
+        LS.set('tt.cache', JSON.stringify(j));
+        if (j.pending && (state.scrape.phase === 'idle' || state.scrape.phase === 'done')) {
+          state.scrape = { phase: 'queued', since: j.refreshRequestedAt }; startPoll(SLOW_POLL_MS);
+        } else if (!j.pending && state.scrape.phase === 'queued') {
+          state.scrape = { phase: 'idle' }; stopPoll();
+        }
+      })
+      .catch(function (e) { state.fetchError = 'Could not update (' + (e.message || e) + '). Showing the saved copy.'; })
+      .then(function () { btn.disabled = false; btn.textContent = 'Reload'; render(); });
+  }
+
+  // ---------- ask for a fresh scrape ----------
+  function startPoll(ms) { stopPoll(); poller = setInterval(checkScrape, ms); }
+  function stopPoll() { if (poller) { clearInterval(poller); poller = null; } }
+
+  function requestScrape() {
+    if (state.demo) { refresh(); return; }
+    if (!configured()) { openSettings(); return; }
+    stopPoll();
+    state.scrape = { phase: 'asking' }; render();
+    api('action=requestRefresh').then(function (j) {
+      if (!j.ok) throw new Error(j.error || 'refused');
+      state.scrape = { phase: 'waiting', since: j.refreshRequestedAt, started: Date.now() };
+      render(); startPoll(FAST_POLL_MS);
+    }).catch(function (e) {
+      state.scrape = { phase: 'error', msg: String((e && e.message) || e) }; render();
+    });
+  }
+
+  // Give up waiting after WAIT_MS even if the status checks themselves keep failing.
+  function waitTimedOut(since) {
+    if (state.scrape.phase === 'waiting' && Date.now() - state.scrape.started > WAIT_MS) {
+      state.scrape = { phase: 'queued', since: since || state.scrape.since, offline: state.scrape.offline };
+      startPoll(SLOW_POLL_MS); render();
+    }
+  }
+  function checkScrape() {
+    api('action=status').then(function (j) {
+      if (!j.ok) throw new Error(j.error || 'refused');
+      if (!j.pending) {
+        stopPoll();
+        state.scrape = { phase: 'done' };
+        refresh();
+        setTimeout(function () { if (state.scrape.phase === 'done') { state.scrape = { phase: 'idle' }; render(); } }, 15000);
+        return;
+      }
+      if (state.scrape.offline) { state.scrape.offline = false; render(); }
+      waitTimedOut(j.refreshRequestedAt);
+    }).catch(function () {
+      if (!state.scrape.offline) { state.scrape.offline = true; render(); }
+      waitTimedOut();
+    });
+  }
+
+  function scrapeStatusText() {
+    var s = state.scrape;
+    if (s.phase === 'asking') return 'Sending request…';
+    if (s.phase === 'waiting') return 'Waiting for your school computer to read Sentral… (up to a minute)';
+    if (s.phase === 'queued' && s.offline) return 'Requested ' + ago(s.since) + '. Cannot reach your Apps Script to check on it. Still trying.';
+    if (s.phase === 'queued') return 'Requested ' + ago(s.since) + '. No computer has picked it up yet. It needs Chrome open with the extension. It will update here when it does.';
+    if (s.phase === 'done') return 'Updated from Sentral.';
+    if (s.phase === 'error') return 'Could not send the request: ' + s.msg;
+    return '';
+  }
+
+  // ---------- render ----------
+  function render() {
+    var banners = document.getElementById('banners'); banners.textContent = '';
+    var upd = document.getElementById('updated'), stamp = document.getElementById('stamp');
+    upd.textContent = ''; stamp.textContent = ''; stamp.className = 'stamp';
+    var hasConfig = state.demo || configured();
+
+    if (!hasConfig) {
+      upd.textContent = 'Not set up yet';
+      banners.appendChild(el('div', 'banner info', 'Open Settings and paste your Web app URL and token, or use the demo.'));
+    } else {
+      if (state.demo) upd.textContent = 'Demo data';
+      var d = state.data, t = d && (d.scrapedAt || d.updated);
+      if (t) {
+        stamp.textContent = 'Last scraped ' + fmtStamp(t) + ' (' + ago(t) + ')';
+        var minutesOld = (Date.now() - new Date(t).getTime()) / 60000;
+        if (minutesOld > OLD_MINUTES) stamp.className = 'stamp old';
+        if (!state.demo && minutesOld / 60 > STALE_HOURS) banners.appendChild(el('div', 'banner warn',
+          'This timetable is more than a day old. Check that the extension is running at school, or click your bookmark on the Sentral page, and check Sentral for late changes.'));
+      } else if (!state.demo) { upd.textContent = 'No timetable uploaded yet'; }
+      if (d && d.lastError && !state.demo) banners.appendChild(el('div', 'banner warn',
+        'The last scrape failed ' + ago(d.lastError.at) + ': ' + d.lastError.message));
+    }
+    if (state.fetchError) banners.appendChild(el('div', 'banner warn', state.fetchError));
+
+    var sb = document.getElementById('scrapeBtn'), ss = document.getElementById('scrapeStatus');
+    sb.disabled = state.scrape.phase === 'asking' || state.scrape.phase === 'waiting';
+    ss.textContent = scrapeStatusText();
+    ss.className = state.scrape.phase === 'error' ? 'bad' : '';
+
+    document.getElementById('tabDay').setAttribute('aria-pressed', state.view === 'day');
+    document.getElementById('tabWeek').setAttribute('aria-pressed', state.view === 'week');
+    var view = document.getElementById('view'); view.textContent = '';
+    if (state.view === 'day') renderDay(view); else renderWeek(view);
+  }
+
+  function periodNode(p, isToday, nowMin) {
+    var s = mins(p.start), e = mins(p.end);
+    var cls = 'period';
+    if (isToday && p.start && p.end) { if (nowMin >= s && nowMin < e) cls += ' now'; else if (nowMin >= e) cls += ' past'; }
+    var node = el('div', cls);
+    var num = el('div', 'pnum', p.period || ''); num.appendChild(el('small', '', p.start || ''));
+    var mid = el('div');
+    mid.appendChild(el('div', 'cls', p.class || ''));
+    mid.appendChild(el('div', 'meta', [(p.start && p.end) ? p.start + ' – ' + p.end : '', p.code || ''].filter(Boolean).join(' · ')));
+    if (p.note) mid.appendChild(el('div', 'note', p.note));
+    node.appendChild(num); node.appendChild(mid); node.appendChild(el('div', 'room', p.room || ''));
+    return node;
+  }
+
+  function renderDay(view) {
+    var nav = el('div', 'daynav');
+    var prev = el('button', '', '‹ Prev'), next = el('button', '', 'Next ›');
+    var today = ymd(new Date());
+    var label = el('strong', '', (state.dayDate === today ? 'Today · ' : '') + fmtDay(state.dayDate));
+    prev.onclick = function () { shift(-1); }; next.onclick = function () { shift(1); };
+    label.style.cursor = 'pointer'; label.onclick = function () { state.dayDate = today; render(); };
+    nav.appendChild(prev); nav.appendChild(label); nav.appendChild(next); view.appendChild(nav);
+
+    var day = getDay(state.dayDate);
+    if (!day || !day.periods || !day.periods.length) {
+      view.appendChild(el('div', 'empty', state.data ? 'No lessons saved for this day.' : 'Nothing to show yet.'));
+      return;
+    }
+    var now = new Date(), nowMin = now.getHours() * 60 + now.getMinutes(), isToday = state.dayDate === today;
+    day.periods.forEach(function (p) { view.appendChild(periodNode(p, isToday, nowMin)); });
+  }
+
+  function shift(delta) {
+    var d = parseYmd(state.dayDate);
+    do { d.setDate(d.getDate() + delta); } while (d.getDay() === 0 || d.getDay() === 6);
+    state.dayDate = ymd(d); render();
+  }
+
+  function renderWeek(view) {
+    var days = sortedDays(), today = ymd(new Date());
+    if (!days.length) { view.appendChild(el('div', 'empty', 'Nothing to show yet.')); return; }
+    var shown = 0;
+    days.forEach(function (d) {
+      if (d.date < today || shown >= 5) return;
+      shown++;
+      view.appendChild(el('div', 'weekday' + (d.date === today ? ' today' : ''), fmtDay(d.date)));
+      var wrap = el('div');
+      (d.periods || []).forEach(function (p) { wrap.appendChild(periodNode(p, false, 0)); });
+      if (!(d.periods || []).length) wrap.appendChild(el('div', 'meta', 'No lessons'));
+      view.appendChild(wrap);
+    });
+    if (!shown) view.appendChild(el('div', 'empty', 'No upcoming days in the saved timetable.'));
+  }
+
+  // ---------- settings ----------
+  var dlg = document.getElementById('settings');
+  function openSettings() {
+    document.getElementById('url').value = LS.get('tt.url') || '';
+    document.getElementById('token').value = LS.get('tt.token') || '';
+    document.getElementById('setErr').textContent = '';
+    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+  }
+  document.getElementById('settingsBtn').onclick = openSettings;
+  document.getElementById('cancelBtn').onclick = function () { dlg.close(); };
+  document.getElementById('saveBtn').onclick = function () {
+    var u = document.getElementById('url').value.trim(), t = document.getElementById('token').value.trim();
+    var err = document.getElementById('setErr');
+    if (!WEB_APP_RE.test(u)) { err.textContent = 'The URL should look like https://script.google.com/macros/s/.../exec'; return; }
+    if (!t) { err.textContent = 'Enter the token.'; return; }
+    LS.set('tt.url', u); LS.set('tt.token', t); LS.del('tt.cache');
+    stopPoll(); state.demo = false; state.data = null; state.fetchError = ''; state.scrape = { phase: 'idle' }; dlg.close(); refresh();
+  };
+  document.getElementById('demoBtn').onclick = function () { stopPoll(); state.demo = true; state.scrape = { phase: 'idle' }; dlg.close(); refresh(); };
+  document.getElementById('refresh').onclick = refresh;
+  document.getElementById('scrapeBtn').onclick = requestScrape;
+  document.getElementById('tabDay').onclick = function () { state.view = 'day'; render(); };
+  document.getElementById('tabWeek').onclick = function () { state.view = 'week'; render(); };
+
+  // ---------- setup link: index.html#url=...&token=... ----------
+  function readHash() {
+    if (!location.hash || location.hash.length < 2) return;
+    var params = {};
+    location.hash.slice(1).split('&').forEach(function (kv) {
+      var i = kv.indexOf('='); if (i > 0) params[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1));
+    });
+    if (params.url && params.token) { LS.set('tt.url', params.url); LS.set('tt.token', params.token); LS.del('tt.cache'); }
+    history.replaceState(null, '', location.pathname + location.search);
+  }
+
+  // ---------- go ----------
+  readHash();
+  loadCache();
+  render();
+  refresh();
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') { if (state.view === 'day') state.dayDate = ymd(new Date()); refresh(); }
+  });
+  setInterval(function () { if (document.visibilityState === 'visible') render(); }, 60000);
+
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
+})();
+</script>
+</body>
+</html>
