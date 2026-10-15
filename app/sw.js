@@ -1,5 +1,5 @@
 // Caches the app shell so the app opens offline. Timetable data is cached by the page itself.
-var CACHE = 'timetable-shell-v7';
+var CACHE = 'timetable-shell-v8';
 var SHELL = ['./', './index.html', './manifest.json', './icon.svg', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', function (e) {
@@ -18,8 +18,9 @@ self.addEventListener('fetch', function (e) {
   var url = new URL(e.request.url);
   if (e.request.method !== 'GET' || url.origin !== location.origin) return; // let Apps Script calls go straight to the network
   // Network first so updates to the app arrive, falling back to the cached copy offline.
+  // 'no-cache' makes the browser check with GitHub Pages every time instead of reusing its copy for 10 minutes.
   e.respondWith(
-    fetch(e.request).then(function (res) {
+    fetch(e.request.url, { cache: 'no-cache' }).then(function (res) {
       var copy = res.clone();
       caches.open(CACHE).then(function (c) { c.put(e.request, copy); });
       return res;

@@ -415,7 +415,19 @@
   // Re-read the saved timetable every 5 minutes while the app is on screen.
   setInterval(function () { if (document.visibilityState === 'visible' && !state.demo) refresh(); }, AUTO_RELOAD_MS);
 
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
+  // Updates: check for a new version whenever the app comes back on screen, and reload once when it takes over.
+  if ('serviceWorker' in navigator) {
+    var hadWorker = !!navigator.serviceWorker.controller, reloading = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      if (!hadWorker || reloading) return; // first install: nothing old to replace
+      reloading = true; location.reload();
+    });
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (reg) {
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') reg.update().catch(function () {});
+      });
+    }).catch(function () {});
+  }
 })();
 </script>
 </body>

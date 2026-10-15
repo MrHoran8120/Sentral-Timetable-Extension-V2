@@ -146,6 +146,9 @@ Still to test:
 - [ ] Viewing another fortnight (`&cycle=`) is skipped quietly (badge "-"), no red banner in the app (fixed 2026-10-15)
 - [ ] Bookmark regenerated (old bookmarks still send today only) sends 10 days
 - [ ] Bookmark route on the real Sentral page (CSP / javascript: policy)
+- [ ] Phone picks up a new version without reinstalling: switch away and back to the app; it should reload itself once
+      (sw.js fetches with cache 'no-cache'; page calls reg.update() on visibilitychange and reloads on controllerchange; added 2026-10-15).
+      The first time, the phone needs one reinstall to get this code.
 - [ ] App hosted (GitHub Pages, `app` folder only), installed on the phone, opens offline, picks up a new deploy (cache now `timetable-shell-v3`)
 - [ ] Phone app Settings filled in and showing today's lessons
 
