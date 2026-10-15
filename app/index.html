@@ -11,11 +11,11 @@
 <style>
   :root {
     --bg:#f4f6f9; --card:#fff; --text:#1b2430; --muted:#6b7785; --accent:#1f4e79;
-    --now:#e8f1fb; --nowborder:#2f7fd1; --warn:#b3261e; --warnbg:#fdecea; --line:#e3e8ee;
+    --now:#e8f5e9; --nowborder:#2e7d32; --warn:#b3261e; --warnbg:#fdecea; --line:#e3e8ee;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg:#10151c; --card:#1a222c; --text:#e8edf3; --muted:#93a1b1; --accent:#7db4ec;
-      --now:#1c2f45; --nowborder:#4a95e0; --warn:#ffb4ab; --warnbg:#3a1f1d; --line:#2a3542; }
+      --now:#1b3320; --nowborder:#66bb6a; --warn:#ffb4ab; --warnbg:#3a1f1d; --line:#2a3542; }
   }
   * { box-sizing:border-box; }
   body { margin:0; background:var(--bg); color:var(--text);
@@ -48,6 +48,8 @@
     border-radius:10px; padding:12px; margin:8px 0; }
   .period.now { background:var(--now); border-color:var(--nowborder); border-left-color:var(--nowborder); }
   .period.past { opacity:.55; }
+  .period.next { border-left-color:var(--nowborder); }
+  .live { color:var(--nowborder); font-size:12px; font-weight:600; margin-top:2px; }
   .pnum { font-weight:700; color:var(--accent); font-size:18px; text-align:center; }
   .pnum small { display:block; font-weight:400; color:var(--muted); font-size:11px; }
   .cls { font-weight:600; }
@@ -118,6 +120,7 @@
     set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
     del: function (k) { try { localStorage.removeItem(k); } catch (e) {} }
   };
+  var LIVE_FROM = 8 * 60 + 30, LIVE_TO = 16 * 60; // 8:30 am to 4 pm: show the running period and countdowns
   var STALE_HOURS = 24, OLD_MINUTES = 120;
   var WEB_APP_RE = /^https:\/\/script\.google\.com\/macros\/(a\/[^\/\s]+\/)?s\/[^\/\s]+\/exec$/;
   var FAST_POLL_MS = 5000, SLOW_POLL_MS = 30000, WAIT_MS = 120000;
@@ -129,6 +132,7 @@
   function ymd(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
   function parseYmd(s) { var p = s.split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
   function mins(hhmm) { var p = String(hhmm || '').split(':'); return (+p[0]) * 60 + (+p[1] || 0); }
+  function duration(m) { return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : ''); }
   function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
   function fmtDay(s) { return parseYmd(s).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'short' }); }
   function fmtStamp(iso) {
@@ -290,16 +294,22 @@
     if (state.view === 'day') renderDay(view); else renderWeek(view);
   }
 
-  function periodNode(p, isToday, nowMin) {
+  // live: today, between LIVE_FROM and LIVE_TO. nextStart: start (minutes) of the next period when none is running, else null.
+  function periodNode(p, isToday, nowMin, live, nextStart) {
     var s = mins(p.start), e = mins(p.end);
-    var cls = 'period';
-    if (isToday && p.start && p.end) { if (nowMin >= s && nowMin < e) cls += ' now'; else if (nowMin >= e) cls += ' past'; }
+    var cls = 'period', badge = '';
+    if (isToday && p.start && p.end) {
+      if (nowMin >= e) cls += ' past';
+      else if (live && nowMin >= s) { cls += ' now'; badge = duration(e - nowMin) + ' left'; }
+      else if (live && s === nextStart) { cls += ' next'; badge = 'Starting in ' + duration(s - nowMin); }
+    }
     var node = el('div', cls);
     var num = el('div', 'pnum', p.period || ''); num.appendChild(el('small', '', p.start || ''));
     var mid = el('div');
     mid.appendChild(el('div', 'cls', p.class || ''));
     mid.appendChild(el('div', 'meta', [(p.start && p.end) ? p.start + ' – ' + p.end : '', p.code || ''].filter(Boolean).join(' · ')));
     if (p.note) mid.appendChild(el('div', 'note', p.note));
+    if (badge) mid.appendChild(el('div', 'live', badge));
     node.appendChild(num); node.appendChild(mid); node.appendChild(el('div', 'room', p.room || ''));
     return node;
   }
@@ -318,8 +328,16 @@
       view.appendChild(el('div', 'empty', state.data ? 'No lessons saved for this day.' : 'Nothing to show yet.'));
       return;
     }
-    var now = new Date(), nowMin = now.getHours() * 60 + now.getMinutes(), isToday = state.dayDate === today;
-    day.periods.forEach(function (p) { view.appendChild(periodNode(p, isToday, nowMin)); });
+    var now = new Date(Date.now()), nowMin = now.getHours() * 60 + now.getMinutes(), isToday = state.dayDate === today;
+    var live = isToday && nowMin >= LIVE_FROM && nowMin < LIVE_TO, running = false, nextStart = null;
+    day.periods.forEach(function (p) {
+      if (!p.start || !p.end) return;
+      var s = mins(p.start), e = mins(p.end);
+      if (nowMin >= s && nowMin < e) running = true;
+      if (s > nowMin && (nextStart === null || s < nextStart)) nextStart = s;
+    });
+    if (running) nextStart = null;
+    day.periods.forEach(function (p) { view.appendChild(periodNode(p, isToday, nowMin, live, nextStart)); });
   }
 
   function shift(delta) {
@@ -337,7 +355,7 @@
       shown++;
       view.appendChild(el('div', 'weekday' + (d.date === today ? ' today' : ''), fmtDay(d.date)));
       var wrap = el('div');
-      (d.periods || []).forEach(function (p) { wrap.appendChild(periodNode(p, false, 0)); });
+      (d.periods || []).forEach(function (p) { wrap.appendChild(periodNode(p, false, 0, false, null)); });
       if (!(d.periods || []).length) wrap.appendChild(el('div', 'meta', 'No lessons'));
       view.appendChild(wrap);
     });
@@ -387,7 +405,7 @@
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible') { if (state.view === 'day') state.dayDate = ymd(new Date()); refresh(); }
   });
-  setInterval(function () { if (document.visibilityState === 'visible') render(); }, 60000);
+  setInterval(function () { if (document.visibilityState === 'visible') render(); }, 15000);
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
 })();

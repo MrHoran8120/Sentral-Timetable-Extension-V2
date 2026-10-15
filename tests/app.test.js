@@ -26,7 +26,7 @@ function mkServer(o={}){
     if(action==='status'){s.polls++; if(s.pending&&s.completeAfter&&s.polls>=s.completeAfter){s.pending=false;s.scrapedAt=new Date().toISOString();}}
     const st={ok:true,updated:s.scrapedAt,scrapedAt:s.scrapedAt,refreshRequestedAt:s.requested||null,pending:s.pending,lastError:s.lastError};
     if(action==='status'||action==='requestRefresh') return st;
-    return {...st,days:[{date:today,periods:[{period:'1',start:'00:00',end:'23:59',class:'Test class',code:'9T1',room:'212',note:''}]}]};};
+    return {...st,days:[{date:today,periods:s.periods||[{period:'1',start:'00:00',end:'23:59',class:'Test class',code:'9T1',room:'212',note:''}]}]};};
   return s;
 }
 const txt=(d,id)=>d.getElementById(id).textContent;
@@ -92,5 +92,17 @@ const txt=(d,id)=>d.getElementById(id).textContent;
   s.statusDown=false; s.completeAfter=s.polls+1; const seen3=[];
   for(let i=0;i<40;i++){await sleep(40);const t=txt(a.d,'scrapeStatus');if(seen3[seen3.length-1]!==t)seen3.push(t);}
   console.log(' back online  :',JSON.stringify(seen3.map(t=>t.slice(0,40))));
+
+  console.log('\n[11] live view through a school day (green = .now, "next" = starting soon)');
+  const bells=[['1','08:45','10:00','On call'],['2','10:20','11:35','Free'],['3','11:40','12:55','10AccSE2'],['4','13:35','14:50','7TECH3']];
+  s=mkServer({periods:bells.map(([period,start,end,c])=>({period,start,end,class:c,code:'',room:'',note:''}))});
+  a=boot({server:s}); await sleep(150);
+  for(const hm of ['07:00','08:29','08:30','09:30','10:05','11:36','12:00','13:00','14:49','15:30','16:30']){
+    const t=new Date();t.setHours(+hm.slice(0,2),+hm.slice(3),0,0);a.skew(t.getTime()-Date.now());
+    a.d.querySelector('.daynav strong').click(); await sleep(30);
+    const rows=[...a.d.querySelectorAll('.period')].map(n=>{const k=n.className.replace('period','').trim(),l=n.querySelector('.live');
+      return n.querySelector('.pnum').firstChild.textContent+(k?'['+k+']':'')+(l?' "'+l.textContent+'"':'');});
+    console.log(' ',hm,rows.join('  '));
+  }
   process.exit(0);
 })();
