@@ -1,5 +1,6 @@
 // Shared timetable reader. Finds the column for a given date (YYYY-MM-DD) on a Sentral
 // timetable page and returns that day's periods 1-4: class name, class code, room, change label.
+// parseAll does this for every date on the page (the whole fortnight).
 // It never reads student lists. Used by the extension, and copied into the bookmark.
 (function (root) {
   'use strict';
@@ -95,5 +96,31 @@
     return null;
   }
 
+  // Every date shown on the page (both weeks of the fortnight), sorted.
+  function pageDates(doc) {
+    var out = [], ths = doc.querySelectorAll('table.timetable th.timetable-date');
+    for (var i = 0; i < ths.length; i++) {
+      var m = clean(ths[i].textContent).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (m) { var d = m[3] + '-' + pad(m[2]) + '-' + pad(m[1]); if (out.indexOf(d) < 0) out.push(d); }
+    }
+    return out.sort();
+  }
+
+  // All days on the page, each as parseDay returns it. Days whose layout is not understood are left out.
+  function parseAll(doc) {
+    return pageDates(doc).map(function (d) { return parseDay(doc, d); }).filter(Boolean);
+  }
+
+  // True if the days run from at most 2 days after today to at least 2 days before it,
+  // so a weekend next to the fortnight still counts, but another fortnight does not.
+  function isCurrent(days, ymd) {
+    if (!days.length) return false;
+    function n(s) { var p = s.split('-'); return Date.UTC(+p[0], +p[1] - 1, +p[2]) / 864e5; }
+    var t = n(ymd);
+    return n(days[0].date) <= t + 2 && n(days[days.length - 1].date) >= t - 2;
+  }
+
   root.sentralParseDay = parseDay;
+  root.sentralParseAll = parseAll;
+  root.sentralIsCurrent = isCurrent;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

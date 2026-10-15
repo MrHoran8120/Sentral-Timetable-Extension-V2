@@ -19,7 +19,7 @@ function run(label,{owner='G Horan',failFetch=false,now='2026-10-15T14:50:00',ht
       const toast=[...w.document.querySelectorAll('div')].find(d=>d.style.zIndex==='2147483647');
       console.log('\n['+label+']\n toast:',toast?toast.textContent.replace(/\n/g,' | '):'(none)');
       if(call){const b=JSON.parse(call.o.body);console.log(' fetch:',call.o.mode,'| token ok',b.token==='SECRET9','| source',b.source,'| scrapedAt',b.scrapedAt);
-        console.log(' ',b.days[0].date,b.days[0].periods.map(p=>p.period+':'+p.start+'-'+p.end+' '+p.class+(p.code?' ['+p.code+']':'')+(p.room?' '+p.room:'')).join(' ; '));}
+        const td=b.days.find(d=>d.date===now.slice(0,10))||{date:now.slice(0,10)+' (not on page)',periods:[]};console.log('  sent',b.days.length,'days',b.days[0].date+'..'+b.days[b.days.length-1].date,'|',td.date+(td.holiday?' holiday':''),td.periods.map(p=>p.period+':'+p.start+'-'+p.end+' '+p.class+(p.code?' ['+p.code+']':'')+(p.room?' '+p.room:'')).join(' ; '));}
       if(forms.length)console.log(' backup form used, days:',JSON.parse(forms[0].payload).days.length);
       res();},60);});
 }
@@ -30,4 +30,6 @@ function run(label,{owner='G Horan',failFetch=false,now='2026-10-15T14:50:00',ht
   await run("someone else's timetable",{owner:'Not Me'});
   await run('not a timetable page',{html:'<html><body><h3>G Horan</h3></body></html>'});
   await run('Monday holiday',{now:'2026-10-12T09:00:00'});
+  await run('Saturday between the two weeks',{now:'2026-10-17T09:00:00'});
+  await run('another fortnight (page is old)',{now:'2026-11-05T09:00:00'});
 })();

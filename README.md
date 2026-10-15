@@ -1,6 +1,6 @@
 # Sentral-Timetable-Extension-V2
 
-Shows today's periods 1 to 4 from your Sentral timetable on your phone and desktop.
+Shows periods 1 to 4 for the current fortnight from your Sentral timetable on your phone and desktop.
 
     Sentral (school computer)  --extension, every 15 min-->  Apps Script (personal Google account)  <--app--  phone / desktop
                                   or the bookmark, on click
@@ -8,7 +8,7 @@ Shows today's periods 1 to 4 from your Sentral timetable on your phone and deskt
 Only your personal Google account is used for the Apps Script and the phone.
 The school account is only used to sign in to Sentral.
 
-What is sent: today's periods 1 to 4 only (class name, class code, room, any change label), plus the
+What is sent: periods 1 to 4 for each day of the fortnight shown on your timetable page (class name, class code, room, any change label), plus the
 bell times from the options. No student data, no passwords.
 
 ## 1. Apps Script (personal Google account)
@@ -48,7 +48,7 @@ Sign in to Sentral again and the next scrape works.
 3. Drag "Sync timetable" to the bookmarks bar (Ctrl+Shift+B shows it).
 4. On your Sentral timetable page, click it. A box in the corner lists what was sent.
 
-It only runs when you click it, so the phone's "Get latest from Sentral" button cannot trigger it.
+It only runs when you click it, so the phone app's "Update now" cannot trigger it.
 The bookmark contains your token. If bookmarks sync to your school account, the token goes with them.
 
 ## 3. The app (phone and desktop)
@@ -62,10 +62,13 @@ The bookmark contains your token. If bookmarks sync to your school account, the 
 In the app:
 - A line of small type under the title shows when the timetable was last scraped, for example
   "Last scraped Thu, 15 Oct 2026, 2:31 pm (4 min ago)". It turns red after 2 hours.
-- "Get latest from Sentral" asks your school computer for a fresh scrape. The extension notices within a
-  minute. The app shows "Waiting..." and updates by itself. If no computer answers within 2 minutes it says
-  so and keeps listening, so the update appears as soon as a computer with the extension is back online.
-- "Reload" re-reads what is already saved, without asking Sentral.
+- "Update now" (at the end of that line) asks your school computer for a fresh scrape. The extension notices
+  within a minute. The app shows "Waiting..." and updates by itself. If no computer answers within 2 minutes it
+  says so and keeps listening, so the update appears as soon as a computer with the extension is back online.
+- The app re-reads what is already saved every 5 minutes while it is on screen, and whenever you switch back to it.
+  The small circular-arrow icon (top right) does the same on demand; the gear icon opens Settings.
+- From 8:30 am to 4 pm, today's running period is green with the minutes left, and between periods the next
+  one says "Starting in x min".
 - A red banner appears if the last scrape failed (for example, signed out of Sentral).
 
 ## Quick test of the Apps Script (no extension needed)

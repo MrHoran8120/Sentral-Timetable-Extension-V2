@@ -1,5 +1,5 @@
 // Caches the app shell so the app opens offline. Timetable data is cached by the page itself.
-var CACHE = 'timetable-shell-v5';
+var CACHE = 'timetable-shell-v7';
 var SHELL = ['./', './index.html', './manifest.json', './icon.svg', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', function (e) {

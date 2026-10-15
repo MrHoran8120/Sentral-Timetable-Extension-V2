@@ -26,7 +26,7 @@ Your job is to take it from "passes against mocks" to "works for real".
 
     Sentral (school Chrome)
        |  extension (alarm every 15 min, background fetch + offscreen parse)   or   bookmark (on click)
-       v  POST {token, days:[today], scrapedAt}
+       v  POST {token, days:[every day of the current fortnight], scrapedAt}
     Apps Script web app (personal Google account; data in a Drive JSON file; status in Script Properties)
        ^  GET ?token=T [&action=status|requestRefresh]
        |  app (PWA on phone/desktop, hosted on static hosting such as GitHub Pages)
@@ -37,7 +37,7 @@ File map:
     apps-script/Code.gs        doGet/doPost, token check, META/LAST_ERROR/REFRESH_REQUESTED_AT in Script Properties
     extension/manifest.json    MV3. permissions: storage, alarms, offscreen. hosts: *.sentral.com.au, script.google.com(+usercontent)
     extension/parser.js        sentralParseDay(doc, 'YYYY-MM-DD') shared by content script, offscreen page and the bookmark
-    extension/content.js       on the timetable page: parse today, send {type:'page'} to background
+    extension/content.js       on the timetable page: parse every day on it, send {type:'page'} to background
     extension/background.js    alarms ('scrape' every N min, 'poll' every 1 min), scrape(), deliver(), buildDay() (adds bell times)
     extension/offscreen.*      DOMParser host, because a service worker has no DOM
     extension/options.*        URL, token, owner name, interval, active hours, bell times JSON, "Scrape now", last status
@@ -65,7 +65,10 @@ action=requestRefresh sets refreshRequestedAt = now and returns status.
 
 Notes: periods are only "1".."4". A period with no lesson is `{class:"Free"}`. On call and events come through
 as class "On call" / the event title. A holiday day has `periods: []`. A cell holding two classes yields two entries
-with the same period. Each upload REPLACES the stored data (today only).
+with the same period. A holiday day also has `holiday: true`. Each upload REPLACES the stored data (the whole fortnight).
+Since 2026-10-15 the extension and bookmark send every day on the page (usually 10), not just today. They refuse a page
+that is not the current fortnight (`sentralIsCurrent`: first date <= today+2 and last date >= today-2): a page visit is
+skipped quietly, a background scrape reports an error.
 
 ## 4. What the real Sentral page looks like (from the saved fixture)
 
@@ -116,6 +119,9 @@ NEVER RUN FOR REAL (everything below is unverified):
 
 The list above was written before any live testing. This checklist is the current state.
 
+UI names since 2026-10-15: "Get latest from Sentral" is now the "Update now" link at the end of the
+"Last scraped" line; Reload and Settings are small icons (circular arrow, gear) top right.
+
 Done for real on 2026-10-15 (Apps Script on the personal Google account, deployed with `clasp --user personal`;
 extension in the work Chrome, app served locally at localhost:5173 in both the work and private Chrome):
 
@@ -132,10 +138,13 @@ Still to test:
 - [ ] "Get latest": if the app cannot reach the Apps Script while waiting, it still gives up after 2 minutes, says it cannot reach the Apps Script, and recovers by itself when back online (fix added 2026-10-15; test by turning Wi-Fi off after clicking)
 - [ ] Live view (8:30 am to 4 pm, today only): running period green with "x min left"; when no period is running,
       the next one says "Starting in x min"; finished periods greyed (added 2026-10-15; check on the phone during a school day)
+- [ ] New header on the phone: faint reload/gear icons, "Update now" link hides while waiting, progress line below the stamp
 - [ ] App reloads the saved timetable by itself every 5 minutes while on screen (added 2026-10-15)
 - [ ] 15-minute timer scrapes by itself during school hours (stamp advances) and survives the service worker going idle
 - [ ] Signed out of Sentral -> red "last scrape failed" banner in the app; signing in and scraping clears it
-- [ ] Viewing another fortnight (`&cycle=`) does not raise a false error (known issue, not fixed yet)
+- [ ] Extension 2.1.0 (reload it on chrome://extensions): Scrape now says "Uploaded 10 days (...)"; app Prev/Next and Week show other days; Wednesdays use Wednesday bells; a holiday says "Holiday"
+- [ ] Viewing another fortnight (`&cycle=`) is skipped quietly (badge "-"), no red banner in the app (fixed 2026-10-15)
+- [ ] Bookmark regenerated (old bookmarks still send today only) sends 10 days
 - [ ] Bookmark route on the real Sentral page (CSP / javascript: policy)
 - [ ] App hosted (GitHub Pages, `app` folder only), installed on the phone, opens offline, picks up a new deploy (cache now `timetable-shell-v3`)
 - [ ] Phone app Settings filled in and showing today's lessons
@@ -186,7 +195,7 @@ Still to test:
 
 ## 8. Constraints and decisions to keep
 
-- Only today's periods 1 to 4. No student data, no rosters, no marks, no attendance. The owner-name check
+- Only periods 1 to 4 of the current fortnight (changed from today-only on 2026-10-15, at the user's request). No student data, no rosters, no marks, no attendance. The owner-name check
   (the page's h3 must equal the configured name) stops uploading someone else's timetable.
 - Settings use `chrome.storage.local`, NOT `sync`, so the token never goes into a Google account's sync.
 - The Apps Script is deployed "Execute as: Me, Anyone can access". The token is the only protection. Never commit a
@@ -194,7 +203,7 @@ Still to test:
 - `tests/fixtures/sentral-timetable.html` is the user's own saved page (name, school, class codes, session-like
   path). Keep it out of any public repo. The user's GitHub Pages repo should contain only the `app` folder.
   Suggested .gitignore for a private repo: `tests/node_modules/`.
-- Do not add features the user has not asked for. They have asked for: today-only periods 1-4; 15-minute scraping where
+- Do not add features the user has not asked for. They have asked for: periods 1-4 for the current fortnight (originally today only); 15-minute scraping where
   the extension is allowed; a click-to-update fallback; last-scraped stamp in small type; a refresh button; copyable by
   others; application name "Sentral-Timetable-Extension-V2".
 - Check school policy before the user shares this with colleagues (scraping a school system into personal Google
@@ -213,5 +222,4 @@ Still to test:
 
 - Convert tests to real assertions and add CI.
 - Make bell times per-term (summer/winter) and per-day.
-- Optionally show more than today (the data model already supports several days; only the extension limits it to today).
 - Chrome Web Store listing for easier colleague installs.

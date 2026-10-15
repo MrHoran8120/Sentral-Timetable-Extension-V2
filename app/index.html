@@ -30,10 +30,17 @@
   button { font:inherit; border:1px solid var(--line); background:var(--card); color:var(--text);
     border-radius:8px; padding:8px 12px; cursor:pointer; }
   button:disabled { opacity:.55; cursor:default; }
+  .tools { display:flex; gap:2px; align-self:flex-start; margin-top:-4px; }
+  .icon { border:none; background:none; color:var(--muted); opacity:.6; padding:6px; line-height:0; border-radius:50%; }
+  .icon:hover, .icon:focus-visible { opacity:1; background:var(--line); }
+  .icon svg { width:18px; height:18px; }
+  .icon.busy svg { animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
   button.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
   @media (prefers-color-scheme: dark) { button.primary { color:#10151c; } }
-  .actions { display:flex; align-items:center; gap:10px; margin:8px 0 4px; flex-wrap:wrap; }
-  #scrapeStatus { font-size:12px; color:var(--muted); flex:1; min-width:160px; }
+  .link { border:none; background:none; padding:0 0 0 6px; color:var(--accent); font-size:12px;
+    text-decoration:underline; text-underline-offset:2px; }
+  .link:disabled, .link[hidden] { display:none; }
   #scrapeStatus.bad { color:var(--warn); }
   .tabs { display:flex; gap:8px; margin:8px 0 12px; }
   .tabs button[aria-pressed="true"] { background:var(--accent); color:#fff; border-color:var(--accent); }
@@ -74,20 +81,17 @@
     <div>
       <h1 id="title">My Timetable</h1>
       <div class="sub" id="updated"></div>
-      <div class="stamp" id="stamp"></div>
+      <div><span class="stamp" id="stamp"></span><button id="scrapeBtn" class="link" title="Ask your school computer to read Sentral now">Update now</button></div>
+      <div class="stamp" id="scrapeStatus"></div>
     </div>
-    <div>
-      <button id="refresh" title="Load the latest saved timetable">Reload</button>
-      <button id="settingsBtn" title="Settings">Settings</button>
+    <div class="tools">
+      <button id="refresh" class="icon" title="Reload the saved timetable" aria-label="Reload"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg></button>
+      <button id="settingsBtn" class="icon" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.09a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.09a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
     </div>
   </header>
 
   <div id="banners"></div>
 
-  <div class="actions">
-    <button id="scrapeBtn" class="primary" title="Ask your school computer to read Sentral now">Get latest from Sentral</button>
-    <span id="scrapeStatus"></span>
-  </div>
 
   <div class="tabs" role="group" aria-label="View">
     <button id="tabDay" aria-pressed="true">Day</button>
@@ -189,7 +193,7 @@
   function refresh() {
     if (state.demo) { state.data = demoData(); state.fetchError = ''; render(); return Promise.resolve(); }
     if (!configured()) { render(); return Promise.resolve(); }
-    var btn = document.getElementById('refresh'); btn.disabled = true; btn.textContent = '...';
+    var btn = document.getElementById('refresh'); btn.disabled = true; btn.classList.add('busy');
     return api('')
       .then(function (j) {
         if (!j.ok) throw new Error(j.error || 'Server refused the request');
@@ -202,7 +206,7 @@
         }
       })
       .catch(function (e) { state.fetchError = 'Could not update (' + (e.message || e) + '). Showing the saved copy.'; })
-      .then(function () { btn.disabled = false; btn.textContent = 'Reload'; render(); });
+      .then(function () { btn.disabled = false; btn.classList.remove('busy'); render(); });
   }
 
   // ---------- ask for a fresh scrape ----------
@@ -285,9 +289,10 @@
     if (state.fetchError) banners.appendChild(el('div', 'banner warn', state.fetchError));
 
     var sb = document.getElementById('scrapeBtn'), ss = document.getElementById('scrapeStatus');
+    sb.hidden = !hasConfig;
     sb.disabled = state.scrape.phase === 'asking' || state.scrape.phase === 'waiting';
     ss.textContent = scrapeStatusText();
-    ss.className = state.scrape.phase === 'error' ? 'bad' : '';
+    ss.className = state.scrape.phase === 'error' ? 'stamp bad' : 'stamp';
 
     document.getElementById('tabDay').setAttribute('aria-pressed', state.view === 'day');
     document.getElementById('tabWeek').setAttribute('aria-pressed', state.view === 'week');
@@ -326,7 +331,7 @@
 
     var day = getDay(state.dayDate);
     if (!day || !day.periods || !day.periods.length) {
-      view.appendChild(el('div', 'empty', state.data ? 'No lessons saved for this day.' : 'Nothing to show yet.'));
+      view.appendChild(el('div', 'empty', day && day.holiday ? 'Holiday: no lessons.' : state.data ? 'No lessons saved for this day.' : 'Nothing to show yet.'));
       return;
     }
     var now = new Date(Date.now()), nowMin = now.getHours() * 60 + now.getMinutes(), isToday = state.dayDate === today;
@@ -357,7 +362,7 @@
       view.appendChild(el('div', 'weekday' + (d.date === today ? ' today' : ''), fmtDay(d.date)));
       var wrap = el('div');
       (d.periods || []).forEach(function (p) { wrap.appendChild(periodNode(p, false, 0, false, null)); });
-      if (!(d.periods || []).length) wrap.appendChild(el('div', 'meta', 'No lessons'));
+      if (!(d.periods || []).length) wrap.appendChild(el('div', 'meta', d.holiday ? 'Holiday' : 'No lessons'));
       view.appendChild(wrap);
     });
     if (!shown) view.appendChild(el('div', 'empty', 'No upcoming days in the saved timetable.'));

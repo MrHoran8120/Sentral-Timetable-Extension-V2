@@ -1,4 +1,4 @@
-// Runs when you open your Sentral timetable page. Reads today's column (periods 1-4) with parser.js
+// Runs when you open your Sentral timetable page. Reads every day on the page (periods 1-4) with parser.js
 // and hands it to background.js. It never reads student lists, passwords or cookies.
 (function () {
   'use strict';
@@ -17,6 +17,6 @@
     headings: headings,
     hasTable: !!document.querySelector('table.timetable'),
     ymd: ymd,
-    parsed: sentralParseDay(document, ymd)
+    days: sentralParseAll(document)
   });
 })();

@@ -19,7 +19,7 @@
 </head>
 <body>
 <h1>Sentral-Timetable-Extension-V2: bookmark version</h1>
-<p class="hint">For computers where Chrome will not let you install the extension. This page runs in your browser only; nothing you type here is sent anywhere. It makes a bookmark that reads today's periods 1 to 4 from your Sentral timetable page and sends them to your own Apps Script when you click it. It does not run by itself.</p>
+<p class="hint">For computers where Chrome will not let you install the extension. This page runs in your browser only; nothing you type here is sent anywhere. It makes a bookmark that reads periods 1 to 4 for the fortnight shown on your Sentral timetable page and sends them to your own Apps Script when you click it. It does not run by itself.</p>
 
 <label for="url">Apps Script web app URL</label>
 <input id="url" type="url" placeholder="https://script.google.com/macros/s/.../exec">
@@ -51,6 +51,7 @@
 <script id="parser-src" type="text/plain">
 // Shared timetable reader. Finds the column for a given date (YYYY-MM-DD) on a Sentral
 // timetable page and returns that day's periods 1-4: class name, class code, room, change label.
+// parseAll does this for every date on the page (the whole fortnight).
 // It never reads student lists. Used by the extension, and copied into the bookmark.
 (function (root) {
   'use strict';
@@ -146,9 +147,34 @@
     return null;
   }
 
-  root.sentralParseDay = parseDay;
-})(typeof globalThis !== 'undefined' ? globalThis : this);
+  // Every date shown on the page (both weeks of the fortnight), sorted.
+  function pageDates(doc) {
+    var out = [], ths = doc.querySelectorAll('table.timetable th.timetable-date');
+    for (var i = 0; i < ths.length; i++) {
+      var m = clean(ths[i].textContent).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (m) { var d = m[3] + '-' + pad(m[2]) + '-' + pad(m[1]); if (out.indexOf(d) < 0) out.push(d); }
+    }
+    return out.sort();
+  }
 
+  // All days on the page, each as parseDay returns it. Days whose layout is not understood are left out.
+  function parseAll(doc) {
+    return pageDates(doc).map(function (d) { return parseDay(doc, d); }).filter(Boolean);
+  }
+
+  // True if the days run from at most 2 days after today to at least 2 days before it,
+  // so a weekend next to the fortnight still counts, but another fortnight does not.
+  function isCurrent(days, ymd) {
+    if (!days.length) return false;
+    function n(s) { var p = s.split('-'); return Date.UTC(+p[0], +p[1] - 1, +p[2]) / 864e5; }
+    var t = n(ymd);
+    return n(days[0].date) <= t + 2 && n(days[days.length - 1].date) >= t - 2;
+  }
+
+  root.sentralParseDay = parseDay;
+  root.sentralParseAll = parseAll;
+  root.sentralIsCurrent = isCurrent;
+})(typeof globalThis !== 'undefined' ? globalThis : this);
 </script>
 
 <script>
@@ -187,22 +213,28 @@ var BM = function (C) {
 
   var now = new Date();
   var ymd = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
-  var parsed = sentralParseDay(document, ymd);
-  if (!parsed) {
-    if (now.getDay() === 0 || now.getDay() === 6) parsed = { date: ymd, periods: [] };
-    else { toast('Not sent', ['Today is not on this page. Open the current cycle of your timetable.'], true); return; }
-  }
+  var parsed = sentralParseAll(document);
+  if (!parsed.length) { toast('Not sent', ['No days were found on this page.'], true); return; }
+  var range = parsed[0].date + ' to ' + parsed[parsed.length - 1].date;
+  if (!sentralIsCurrent(parsed, ymd)) { toast('Not sent', ['This page shows ' + range + ', not the current fortnight. Open your current timetable.'], true); return; }
 
-  var dow = new Date(+ymd.slice(0, 4), +ymd.slice(5, 7) - 1, +ymd.slice(8, 10)).getDay();
-  var set = (dow === 3 ? C.bell.wednesday : C.bell.normal) || {};
-  var day = { date: parsed.date, periods: parsed.periods.map(function (x) {
-    var t = set[x.period] || ['', ''];
-    return { period: x.period, start: t[0], end: t[1], class: x.class, code: x.code, room: x.room, note: x.note };
-  }) };
-  var json = JSON.stringify({ token: C.token, source: 'sentral-bookmark', scrapedAt: now.toISOString(), days: [day] });
-  var lines = day.periods.map(function (x) { return x.period + '  ' + x.class + (x.room ? '  (' + x.room + ')' : ''); });
-  if (parsed.holiday) lines = ['Holiday: no lessons'];
-  var title = 'Sent ' + parsed.date + ' (check "Last scraped" in your app)';
+  var days = parsed.map(function (p) {
+    var dow = new Date(+p.date.slice(0, 4), +p.date.slice(5, 7) - 1, +p.date.slice(8, 10)).getDay();
+    var set = (dow === 3 ? C.bell.wednesday : C.bell.normal) || {};
+    var day = { date: p.date, periods: p.periods.map(function (x) {
+      var t = set[x.period] || ['', ''];
+      return { period: x.period, start: t[0], end: t[1], class: x.class, code: x.code, room: x.room, note: x.note };
+    }) };
+    if (p.holiday) day.holiday = true;
+    return day;
+  });
+  var json = JSON.stringify({ token: C.token, source: 'sentral-bookmark', scrapedAt: now.toISOString(), days: days });
+  var today = days.filter(function (d) { return d.date === ymd; })[0], lines;
+  if (!today) lines = ['Today: no school day'];
+  else if (today.holiday) lines = ['Today: holiday'];
+  else lines = today.periods.map(function (x) { return x.period + '  ' + x.class + (x.room ? '  (' + x.room + ')' : ''); });
+  lines.push(days.length + ' days, ' + range);
+  var title = 'Sent ' + days.length + ' days (check "Last scraped" in your app)';
 
   try {
     fetch(C.url, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: json })

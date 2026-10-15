@@ -1,8 +1,10 @@
 // Sentral-Timetable-Extension-V2: background worker.
-//  - Every N minutes (default 15, school hours) it re-reads your Sentral timetable page and uploads today's periods 1-4.
+//  - Every N minutes (default 15, school hours) it re-reads your Sentral timetable page and uploads periods 1-4 for every day of the fortnight shown.
 //  - Every minute it asks your Apps Script whether the phone app has requested a fresh scrape, and does it straight away.
 //  - Opening your Sentral timetable page also uploads immediately.
 // Settings live in storage.local (not storage.sync) so the token is never copied into a Chrome/Google sync.
+
+importScripts('parser.js'); // for sentralIsCurrent
 
 var DEFAULT_BELL = {
   normal:    { '1': ['08:45', '10:00'], '2': ['10:20', '11:35'], '3': ['11:40', '12:55'], '4': ['13:35', '14:50'] },
@@ -34,13 +36,15 @@ function buildDay(parsed, bell) {
   var p = parsed.date.split('-');
   var dow = new Date(+p[0], +p[1] - 1, +p[2]).getDay();
   var set = (dow === 3 ? bell.wednesday : bell.normal) || {};
-  return {
+  var day = {
     date: parsed.date,
     periods: parsed.periods.map(function (x) {
       var t = set[x.period] || ['', ''];
       return { period: x.period, start: t[0], end: t[1], class: x.class, code: x.code, room: x.room, note: x.note };
     })
   };
+  if (parsed.holiday) day.holiday = true;
+  return day;
 }
 
 function apiUrl(cfg, query) {
@@ -84,7 +88,7 @@ async function saveStatus(st, tabId) {
   }
 }
 
-// info = { headings, hasTable, ymd, parsed }
+// info = { headings, hasTable, ymd, days }   days = every day parsed from the page
 async function deliver(cfg, info, tabId, reason) {
   var st = { time: new Date().toISOString(), state: 'error', message: '', sent: null, reason: reason };
   var reportable = true;
@@ -96,17 +100,22 @@ async function deliver(cfg, info, tabId, reason) {
       st.state = 'skipped';
       st.message = 'This page is not the timetable for "' + cfg.owner + '", so nothing was uploaded.';
     } else {
-      var parsed = info.parsed;
-      if (!parsed) {
-        var p = info.ymd.split('-'), dow = new Date(+p[0], +p[1] - 1, +p[2]).getDay();
-        if (dow === 0 || dow === 6) parsed = { date: info.ymd, periods: [] };
-        else throw new Error('Today (' + info.ymd + ') was not found on the timetable page, or the layout was not understood.');
+      var days = info.days || [];
+      if (!days.length) throw new Error('No days were found on the timetable page, or the layout was not understood.');
+      var range = days[0].date + ' to ' + days[days.length - 1].date;
+      if (!sentralIsCurrent(days, info.ymd)) {
+        if (reason !== 'page') throw new Error('The saved timetable address shows ' + range + ', not the current fortnight. Open your current Sentral timetable once.');
+        // You are just looking at another fortnight: leave the stored timetable alone.
+        reportable = false;
+        st.state = 'skipped';
+        st.message = 'This page shows ' + range + ', not the current fortnight, so nothing was uploaded.';
+      } else {
+        var out = days.map(function (d) { return buildDay(d, cfg.bell); });
+        await postJson(cfg, { token: cfg.token, source: 'extension-v2', scrapedAt: new Date().toISOString(), days: out });
+        st.state = 'ok';
+        st.message = 'Uploaded ' + out.length + ' days (' + range + ').';
+        st.sent = out;
       }
-      var day = buildDay(parsed, cfg.bell);
-      await postJson(cfg, { token: cfg.token, source: 'extension-v2', scrapedAt: new Date().toISOString(), days: [day] });
-      st.state = 'ok';
-      st.message = 'Uploaded ' + day.periods.length + ' lines for ' + day.date + (parsed.holiday ? ' (holiday)' : '') + '.';
-      st.sent = day;
     }
   } catch (e) {
     st.message = String((e && e.message) || e);
@@ -177,7 +186,7 @@ async function handlePage(msg, tabId) {
     var u = normaliseTimetableUrl(msg.href);
     if (u && u !== cfg.timetableUrl) await chrome.storage.local.set({ timetableUrl: u });
   }
-  return deliver(cfg, { headings: msg.headings, hasTable: msg.hasTable, ymd: msg.ymd, parsed: msg.parsed }, tabId, 'page');
+  return deliver(cfg, { headings: msg.headings, hasTable: msg.hasTable, ymd: msg.ymd, days: msg.days }, tabId, 'page');
 }
 
 async function ensureAlarms(force) {

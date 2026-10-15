@@ -9,6 +9,6 @@ chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
     headings: headings,
     hasTable: !!doc.querySelector('table.timetable'),
     ymd: msg.ymd,
-    parsed: sentralParseDay(doc, msg.ymd)
+    days: sentralParseAll(doc)
   });
 });

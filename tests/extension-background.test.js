@@ -32,13 +32,13 @@ function env({now='2026-10-15T14:50:00',sentral=SENTRAL,pending=false,store={}})
       return {json:async()=>({ok:true,pending}),text:async()=>JSON.stringify({ok:true,pending})};
     }
     throw new Error('unexpected '+u);};
-  const ctx=vm.createContext({chrome,fetch:fetchMock,URL,Date:FD,JSON,Promise,Error,Object,Array,Math,String,Number,parseInt,encodeURIComponent,console});
+  const ctx=vm.createContext({importScripts:f=>vm.runInContext(fs.readFileSync(EXT+f,'utf8'),ctx),chrome,fetch:fetchMock,URL,Date:FD,JSON,Promise,Error,Object,Array,Math,String,Number,parseInt,encodeURIComponent,console});
   vm.runInContext(fs.readFileSync(EXT+'background.js','utf8'),ctx);
   return {data,posts,fetches,alarms,fireAlarm:n=>alarmL({name:n}),send:m=>new Promise(res=>{msgL(m,{tab:{id:7}},res)})};
 }
 const base={url:'https://script.google.com/macros/s/X/exec',token:'T0K',owner:'G Horan',
   timetableUrl:'https://school.sentral.com.au/s-XXXXXX/timetables/timetable?teacher=123'};
-const show=p=>p.days[0].periods.map(x=>x.period+' '+x.start+'-'+x.end+' '+x.class+(x.code?' ['+x.code+']':'')+(x.room?' '+x.room:'')).join(' ; ');
+const show=(p,date)=>{const d=p.days.find(x=>x.date===date)||{periods:[]};return p.days.length+' days '+p.days[0].date+'..'+p.days[p.days.length-1].date+(d.holiday?' (holiday)':'')+' | '+date+': '+d.periods.map(x=>x.period+' '+x.start+'-'+x.end+' '+x.class+(x.code?' ['+x.code+']':'')+(x.room?' '+x.room:'')).join(' ; ');};
 
 (async()=>{
   let e=env({store:base}); await sleep(30);
@@ -47,7 +47,7 @@ const show=p=>p.days[0].periods.map(x=>x.period+' '+x.start+'-'+x.end+' '+x.clas
   console.log('\n[1] timer alarm, Thu 14:50, signed in');
   await e.fireAlarm('scrape'); await sleep(100);
   console.log(' posts:',e.posts.length,'| source',e.posts[0]&&e.posts[0].source,'| token ok',e.posts[0]&&e.posts[0].token==='T0K','| scrapedAt',e.posts[0]&&e.posts[0].scrapedAt);
-  console.log(' ',show(e.posts[0])); console.log(' status:',e.data.lastStatus.state,e.data.lastStatus.message);
+  console.log(' ',show(e.posts[0],'2026-10-15')); console.log(' status:',e.data.lastStatus.state,e.data.lastStatus.message);
 
   console.log('\n[2] poll: request pending -> scrapes; not pending -> does not');
   e=env({store:base,pending:true}); await sleep(30); await e.fireAlarm('poll'); await sleep(100);
@@ -68,7 +68,7 @@ const show=p=>p.days[0].periods.map(x=>x.period+' '+x.start+'-'+x.end+' '+x.clas
   e=env({store:{url:base.url,token:base.token,owner:'G Horan'}}); await sleep(30);
   const dom=new JSDOM(SENTRAL,{runScripts:'outside-only'});dom.window.eval(fs.readFileSync(EXT+'parser.js','utf8'));
   const heads=[...dom.window.document.querySelectorAll('h3')].map(h=>h.textContent.replace(/\s+/g,' ').trim());
-  const msg={type:'page',href:'https://school.sentral.com.au/s-XXXXXX/timetables/timetable?teacher=123&cycle=16#x',headings:heads,hasTable:true,ymd:'2026-10-15',parsed:dom.window.sentralParseDay(dom.window.document,'2026-10-15')};
+  const msg={type:'page',href:'https://school.sentral.com.au/s-XXXXXX/timetables/timetable?teacher=123&cycle=16#x',headings:heads,hasTable:true,ymd:'2026-10-15',days:dom.window.sentralParseAll(dom.window.document)};
   let st=await e.send(msg); console.log(' state:',st.state,'| learned url:',e.data.timetableUrl,'| posts',e.posts.length);
   e=env({store:{...base,owner:'Someone Else'}}); await sleep(30); st=await e.send(msg); console.log(' wrong owner ->',st.state,'| posts',e.posts.length,'| url learned:',!!e.data.timetableUrl&&e.data.timetableUrl!==base.timetableUrl);
 
@@ -77,5 +77,14 @@ const show=p=>p.days[0].periods.map(x=>x.period+' '+x.start+'-'+x.end+' '+x.clas
 
   console.log('\n[7] Wednesday uses Wednesday bell times');
   e=env({store:base,now:'2026-10-14T10:00:00'}); await sleep(30); await e.fireAlarm('scrape'); await sleep(100);
-  console.log(' ',show(e.posts[0]));
+  console.log(' ',show(e.posts[0],'2026-10-14'));
+
+  console.log('\n[8] weekend next to the fortnight still uploads; Monday holiday kept');
+  e=env({store:base,now:'2026-10-17T10:00:00'}); await sleep(30); st=await e.send({type:'scrapeNow'});
+  console.log(' ',st.state,'|',st.message); if(e.posts[0]&&!e.posts[0].error) console.log('  ',show(e.posts[0],'2026-10-12'));
+
+  console.log('\n[9] another fortnight: page visit is skipped quietly; background scrape reports an error');
+  e=env({store:base,now:'2026-11-05T10:00:00'}); await sleep(30);
+  st=await e.send({...msg,ymd:'2026-11-05'}); console.log(' page visit :',st.state,'|',st.message,'| posts',e.posts.length);
+  st=await e.send({type:'scrapeNow'}); console.log(' scrape now :',st.state,'|',st.message.slice(0,70),'| error reported:',e.posts.some(p=>p.error));
 })();
